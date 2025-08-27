@@ -3,7 +3,7 @@
  * Plugin Name: WooCommerce Barcode Labels
  * Plugin URI: https://codewattz.com
  * Description: Print customizable barcode labels for WooCommerce products with bulk printing support
- * Version: 1.0.2
+ * Version: 1.0.3
  * Author: Code Wattz
  * License: GPL v2 or later
  * Requires at least: 5.0
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('WC_BARCODE_LABELS_VERSION', '1.0.2');
+define('WC_BARCODE_LABELS_VERSION', '1.0.3');
 define('WC_BARCODE_LABELS_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('WC_BARCODE_LABELS_PLUGIN_PATH', plugin_dir_path(__FILE__));
 
@@ -24,6 +24,7 @@ class WC_Barcode_Labels {
     
     public function __construct() {
         add_action('init', array($this, 'init'));
+        add_action('admin_init', array($this, 'admin_init'));
         add_action('before_woocommerce_init', array($this, 'declare_hpos_compatibility'));
     }
     
@@ -40,6 +41,12 @@ class WC_Barcode_Labels {
         $this->enqueue_assets();
         
         add_action('wc_barcode_labels_cleanup', array($this, 'cleanup_old_labels'));
+    }
+    
+    public function admin_init() {
+        if (class_exists('WooCommerce') && is_admin()) {
+            $this->init_product_columns();
+        }
     }
     
     public function woocommerce_missing_notice() {
@@ -98,23 +105,94 @@ class WC_Barcode_Labels {
     private function init_bulk_actions() {
         add_filter('bulk_actions-edit-product', array($this, 'add_bulk_action'));
         add_filter('handle_bulk_actions-edit-product', array($this, 'handle_bulk_action'), 10, 3);
+        add_action('admin_notices', array($this, 'bulk_action_admin_notice'));
+    }
+    
+    private function init_product_columns() {
+        add_filter('manage_product_posts_columns', array($this, 'add_label_printed_column'), 15);
+        add_action('manage_product_posts_custom_column', array($this, 'display_label_printed_column'), 10, 2);
+        add_filter('manage_edit-product_sortable_columns', array($this, 'make_label_printed_column_sortable'));
     }
     
     public function add_bulk_action($bulk_actions) {
         $bulk_actions['print_barcode_labels'] = 'Print Barcode Labels';
+        $bulk_actions['mark_labels_printed'] = 'Mark Labels as Printed';
+        $bulk_actions['mark_labels_not_printed'] = 'Mark Labels as Not Printed';
         return $bulk_actions;
     }
     
     public function handle_bulk_action($redirect_to, $doaction, $post_ids) {
-        if ($doaction !== 'print_barcode_labels') {
-            return $redirect_to;
+        if ($doaction === 'print_barcode_labels') {
+            $redirect_to = admin_url('admin.php?page=woo-barcode-labels&product_ids=' . implode(',', $post_ids));
+        } elseif ($doaction === 'mark_labels_printed') {
+            $marked_count = 0;
+            foreach ($post_ids as $post_id) {
+                update_post_meta($post_id, '_barcode_label_printed', 'yes');
+                update_post_meta($post_id, '_barcode_label_printed_date', current_time('mysql'));
+                $marked_count++;
+            }
+            $redirect_to = add_query_arg('bulk_labels_marked', $marked_count, $redirect_to);
+        } elseif ($doaction === 'mark_labels_not_printed') {
+            $unmarked_count = 0;
+            foreach ($post_ids as $post_id) {
+                delete_post_meta($post_id, '_barcode_label_printed');
+                delete_post_meta($post_id, '_barcode_label_printed_date');
+                $unmarked_count++;
+            }
+            $redirect_to = add_query_arg('bulk_labels_unmarked', $unmarked_count, $redirect_to);
         }
-        
-        $redirect_to = admin_url('admin.php?page=woo-barcode-labels&product_ids=' . implode(',', $post_ids));
         
         return $redirect_to;
     }
     
+    public function add_label_printed_column($columns) {
+        $columns['label_printed'] = 'Label Printed';
+        return $columns;
+    }
+    
+    public function make_label_printed_column_sortable($columns) {
+        $columns['label_printed'] = 'label_printed';
+        return $columns;
+    }
+    
+    public function display_label_printed_column($column, $post_id) {
+        if ($column === 'label_printed') {
+            $printed = get_post_meta($post_id, '_barcode_label_printed', true);
+            if ($printed === 'yes') {
+                $printed_date = get_post_meta($post_id, '_barcode_label_printed_date', true);
+                $formatted_date = $printed_date ? date('M j, Y', strtotime($printed_date)) : '';
+                echo '<span style="color: #46b450; font-weight: bold; font-size: 16px;" title="Printed on: ' . esc_attr($formatted_date) . '">✓</span>';
+            }
+        }
+    }
+    
+    public function bulk_action_admin_notice() {
+        if (!empty($_REQUEST['bulk_labels_marked'])) {
+            $marked_count = intval($_REQUEST['bulk_labels_marked']);
+            printf(
+                '<div id="message" class="updated notice is-dismissible"><p>' .
+                _n(
+                    'Successfully marked %d product label as printed.',
+                    'Successfully marked %d product labels as printed.',
+                    $marked_count
+                ) . '</p></div>',
+                $marked_count
+            );
+        }
+        
+        if (!empty($_REQUEST['bulk_labels_unmarked'])) {
+            $unmarked_count = intval($_REQUEST['bulk_labels_unmarked']);
+            printf(
+                '<div id="message" class="updated notice is-dismissible"><p>' .
+                _n(
+                    'Successfully marked %d product label as not printed.',
+                    'Successfully marked %d product labels as not printed.',
+                    $unmarked_count
+                ) . '</p></div>',
+                $unmarked_count
+            );
+        }
+    }
     
     private function enqueue_assets() {
         add_action('admin_enqueue_scripts', array($this, 'admin_enqueue_scripts'));
@@ -319,6 +397,7 @@ class WC_Barcode_Labels {
         
         if ($pdf_result) {
             $this->save_label_history($product_ids, $settings, $pdf_result);
+            $this->mark_products_as_printed($product_ids);
             wp_send_json_success(array('pdf_url' => $pdf_result));
         } else {
             wp_send_json_error(array('message' => 'Failed to generate PDF'));
@@ -380,6 +459,13 @@ class WC_Barcode_Labels {
         
         $pdf_generator = new WC_Barcode_Labels_PDF_Generator();
         return $pdf_generator->generate($product_ids, $settings);
+    }
+    
+    private function mark_products_as_printed($product_ids) {
+        foreach ($product_ids as $product_id) {
+            update_post_meta($product_id, '_barcode_label_printed', 'yes');
+            update_post_meta($product_id, '_barcode_label_printed_date', current_time('mysql'));
+        }
     }
     
     private function is_wooconsign_active() {
