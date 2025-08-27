@@ -3,7 +3,7 @@
  * Plugin Name: WooCommerce Barcode Labels
  * Plugin URI: https://codewattz.com
  * Description: Print customizable barcode labels for WooCommerce products with bulk printing support
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: Code Wattz
  * License: GPL v2 or later
  * Requires at least: 5.0
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('WC_BARCODE_LABELS_VERSION', '1.0.0');
+define('WC_BARCODE_LABELS_VERSION', '1.0.1');
 define('WC_BARCODE_LABELS_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('WC_BARCODE_LABELS_PLUGIN_PATH', plugin_dir_path(__FILE__));
 
@@ -33,10 +33,13 @@ class WC_Barcode_Labels {
             return;
         }
         
+        $this->create_database_tables();
         $this->init_hooks();
         $this->init_admin_menu();
         $this->init_bulk_actions();
         $this->enqueue_assets();
+        
+        add_action('wc_barcode_labels_cleanup', array($this, 'cleanup_old_labels'));
     }
     
     public function woocommerce_missing_notice() {
@@ -60,13 +63,35 @@ class WC_Barcode_Labels {
     }
     
     public function add_admin_menu() {
-        add_submenu_page(
-            'woocommerce',
+        // Add main menu for Barcode Labels
+        add_menu_page(
             'Barcode Labels',
             'Barcode Labels',
             'manage_woocommerce',
             'woo-barcode-labels',
+            array($this, 'admin_page'),
+            'dashicons-tag',
+            56 // Position after WooCommerce
+        );
+        
+        // Add submenu for Generate Labels (same as main menu)
+        add_submenu_page(
+            'woo-barcode-labels',
+            'Generate Labels',
+            'Generate Labels',
+            'manage_woocommerce',
+            'woo-barcode-labels',
             array($this, 'admin_page')
+        );
+        
+        // Add submenu for Label History
+        add_submenu_page(
+            'woo-barcode-labels',
+            'Label History',
+            'Label History',
+            'manage_woocommerce',
+            'woo-barcode-labels-history',
+            array($this, 'history_admin_page')
         );
     }
     
@@ -286,10 +311,11 @@ class WC_Barcode_Labels {
             'font_size' => intval($_POST['font_size'])
         );
         
-        $pdf_url = $this->generate_pdf_labels($product_ids, $settings);
+        $pdf_result = $this->generate_pdf_labels($product_ids, $settings);
         
-        if ($pdf_url) {
-            wp_send_json_success(array('pdf_url' => $pdf_url));
+        if ($pdf_result) {
+            $this->save_label_history($product_ids, $settings, $pdf_result);
+            wp_send_json_success(array('pdf_url' => $pdf_result));
         } else {
             wp_send_json_error(array('message' => 'Failed to generate PDF'));
         }
@@ -381,10 +407,315 @@ class WC_Barcode_Labels {
         ));
     }
     
+    private function create_database_tables() {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'barcode_label_history';
+        $charset_collate = $wpdb->get_charset_collate();
+        
+        if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") != $table_name) {
+            $sql = "CREATE TABLE $table_name (
+                id mediumint(9) NOT NULL AUTO_INCREMENT,
+                pdf_filename varchar(255) NOT NULL,
+                pdf_url varchar(500) NOT NULL,
+                product_count int NOT NULL,
+                product_ids text NOT NULL,
+                product_names text NOT NULL,
+                settings text NOT NULL,
+                created_at datetime DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY created_at (created_at)
+            ) $charset_collate;";
+            
+            require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+            dbDelta($sql);
+        }
+    }
+    
+    private function save_label_history($product_ids, $settings, $pdf_url) {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'barcode_label_history';
+        
+        $product_names = array();
+        $consignor_numbers = array();
+        foreach ($product_ids as $product_id) {
+            $product = wc_get_product($product_id);
+            if ($product) {
+                $product_names[] = $product->get_name();
+                $consignor_number = $this->get_consignor_number($product_id);
+                if ($consignor_number) {
+                    $consignor_numbers[] = $consignor_number;
+                } else {
+                    $consignor_numbers[] = 'N/A';
+                }
+            }
+        }
+        
+        $filename = basename($pdf_url);
+        
+        $wpdb->insert(
+            $table_name,
+            array(
+                'pdf_filename' => $filename,
+                'pdf_url' => $pdf_url,
+                'product_count' => count($product_ids),
+                'product_ids' => implode(',', $product_ids),
+                'product_names' => wp_json_encode($consignor_numbers),
+                'settings' => wp_json_encode($settings)
+            ),
+            array('%s', '%s', '%d', '%s', '%s', '%s')
+        );
+    }
+    
+    public function history_admin_page() {
+        global $wpdb;
+        
+        $action = isset($_GET['action']) ? sanitize_text_field($_GET['action']) : '';
+        $history_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+        
+        if ($action === 'delete' && $history_id) {
+            $this->delete_label_history($history_id);
+            echo '<div class="notice notice-success is-dismissible"><p>Label history deleted successfully.</p></div>';
+        }
+        
+        if ($action === 'cleanup') {
+            $deleted_count = $this->cleanup_old_labels();
+            echo '<div class="notice notice-success is-dismissible"><p>' . $deleted_count . ' old label(s) cleaned up successfully.</p></div>';
+        }
+        
+        $table_name = $wpdb->prefix . 'barcode_label_history';
+        
+        $per_page = 20;
+        $paged = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+        $offset = ($paged - 1) * $per_page;
+        
+        $total_items = $wpdb->get_var("SELECT COUNT(*) FROM $table_name");
+        $total_pages = ceil($total_items / $per_page);
+        
+        $results = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM $table_name ORDER BY created_at DESC LIMIT %d OFFSET %d",
+            $per_page,
+            $offset
+        ));
+        
+        ?>
+        <div class="wrap">
+            <h1>Label History 
+                <a href="<?php echo admin_url('admin.php?page=woo-barcode-labels-history&action=cleanup'); ?>" class="page-title-action">Cleanup Old Labels</a>
+            </h1>
+            
+            <?php if (empty($results)): ?>
+                <div class="notice notice-info">
+                    <p>No label history found. <a href="<?php echo admin_url('admin.php?page=woo-barcode-labels'); ?>">Generate your first labels</a>.</p>
+                </div>
+            <?php else: ?>
+                <div class="tablenav top">
+                    <div class="tablenav-pages">
+                        <?php if ($total_pages > 1): ?>
+                            <span class="displaying-num"><?php echo $total_items; ?> items</span>
+                            <span class="pagination-links">
+                                <?php if ($paged > 1): ?>
+                                    <a class="first-page button" href="<?php echo admin_url('admin.php?page=woo-barcode-labels-history'); ?>">&laquo;</a>
+                                    <a class="prev-page button" href="<?php echo admin_url('admin.php?page=woo-barcode-labels-history&paged=' . ($paged - 1)); ?>">&lsaquo;</a>
+                                <?php endif; ?>
+                                <span class="paging-input">
+                                    <span class="tablenav-paging-text"><?php echo $paged; ?> of <span class="total-pages"><?php echo $total_pages; ?></span></span>
+                                </span>
+                                <?php if ($paged < $total_pages): ?>
+                                    <a class="next-page button" href="<?php echo admin_url('admin.php?page=woo-barcode-labels-history&paged=' . ($paged + 1)); ?>">&rsaquo;</a>
+                                    <a class="last-page button" href="<?php echo admin_url('admin.php?page=woo-barcode-labels-history&paged=' . $total_pages); ?>">&raquo;</a>
+                                <?php endif; ?>
+                            </span>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                
+                <style>
+                    .consignor-tooltip {
+                        position: relative;
+                        cursor: help;
+                        display: inline-block;
+                    }
+                    .consignor-tooltip .tooltip-content {
+                        display: none;
+                        position: absolute;
+                        background: #333;
+                        color: #fff;
+                        padding: 10px;
+                        border-radius: 4px;
+                        z-index: 1000;
+                        white-space: nowrap;
+                        bottom: 125%;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+                    }
+                    .consignor-tooltip:hover .tooltip-content {
+                        display: block;
+                    }
+                    .consignor-tooltip .tooltip-content::after {
+                        content: "";
+                        position: absolute;
+                        top: 100%;
+                        left: 50%;
+                        margin-left: -5px;
+                        border-width: 5px;
+                        border-style: solid;
+                        border-color: #333 transparent transparent transparent;
+                    }
+                    .consignor-tooltip .tooltip-content .consignor-item {
+                        display: block;
+                        margin: 2px 0;
+                    }
+                    .warning-badge {
+                        display: inline-block;
+                        background: #ffa500;
+                        color: #fff;
+                        padding: 2px 6px;
+                        border-radius: 3px;
+                        font-size: 11px;
+                        margin-left: 5px;
+                    }
+                    .warning-badge.critical {
+                        background: #dc3232;
+                    }
+                </style>
+                <table class="wp-list-table widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <th scope="col" class="manage-column">Generated</th>
+                            <th scope="col" class="manage-column">Consignors</th>
+                            <th scope="col" class="manage-column">Overview</th>
+                            <th scope="col" class="manage-column">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($results as $row): 
+                            $consignor_numbers = json_decode($row->product_names, true);
+                            $settings = json_decode($row->settings, true);
+                            $file_exists = $this->pdf_file_exists($row->pdf_url);
+                            $age_days = floor((time() - strtotime($row->created_at)) / (24 * 60 * 60));
+                        ?>
+                            <tr>
+                                <td>
+                                    <strong><?php echo date('M j, Y g:i A', strtotime($row->created_at)); ?></strong><br>
+                                    <small><?php echo $age_days; ?> day<?php echo $age_days != 1 ? 's' : ''; ?> ago</small>
+                                    <?php if ($age_days >= 7): ?>
+                                        <span class="warning-badge critical">Expires today!</span>
+                                    <?php elseif ($age_days == 6): ?>
+                                        <span class="warning-badge">Expires tomorrow</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <strong><?php echo $row->product_count; ?> label<?php echo $row->product_count != 1 ? 's' : ''; ?></strong><br>
+                                    <?php if (count($consignor_numbers) > 2): ?>
+                                        <small class="consignor-tooltip">
+                                            <?php echo esc_html(implode(', ', array_slice($consignor_numbers, 0, 2))); ?>...
+                                            <div class="tooltip-content">
+                                                <strong>All Consignors:</strong>
+                                                <?php foreach ($consignor_numbers as $consignor): ?>
+                                                    <span class="consignor-item"><?php echo esc_html($consignor); ?></span>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        </small>
+                                    <?php else: ?>
+                                        <small><?php echo esc_html(implode(', ', $consignor_numbers)); ?></small>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php 
+                                    $enabled_features = array();
+                                    if ($settings['show_title']) $enabled_features[] = 'Title';
+                                    if ($settings['show_price']) $enabled_features[] = 'Price';
+                                    if ($settings['show_sku']) $enabled_features[] = 'SKU';
+                                    if ($settings['show_barcode']) $enabled_features[] = 'Barcode';
+                                    if ($settings['show_consignor']) $enabled_features[] = 'Consignor';
+                                    echo esc_html(implode(', ', $enabled_features));
+                                    ?>
+                                </td>
+                                <td>
+                                    <?php if ($file_exists): ?>
+                                        <a href="<?php echo esc_url($row->pdf_url); ?>" class="button button-primary button-small" target="_blank">View PDF</a>
+                                        <a href="<?php echo admin_url('admin.php?page=woo-barcode-labels&product_ids=' . $row->product_ids); ?>" class="button button-small">Reprint</a>
+                                    <?php else: ?>
+                                        <span class="description">File expired</span><br>
+                                        <a href="<?php echo admin_url('admin.php?page=woo-barcode-labels&product_ids=' . $row->product_ids); ?>" class="button button-small">Regenerate</a>
+                                    <?php endif; ?>
+                                    <br><br>
+                                    <a href="<?php echo admin_url('admin.php?page=woo-barcode-labels-history&action=delete&id=' . $row->id); ?>" class="button button-small" onclick="return confirm('Are you sure you want to delete this record?');">Delete</a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        </div>
+        <?php
+    }
+    
+    private function pdf_file_exists($url) {
+        $file_path = str_replace(wp_upload_dir()['baseurl'], wp_upload_dir()['basedir'], $url);
+        return file_exists($file_path);
+    }
+    
+    private function delete_label_history($history_id) {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'barcode_label_history';
+        
+        $record = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table_name WHERE id = %d",
+            $history_id
+        ));
+        
+        if ($record) {
+            $file_path = str_replace(wp_upload_dir()['baseurl'], wp_upload_dir()['basedir'], $record->pdf_url);
+            if (file_exists($file_path)) {
+                unlink($file_path);
+            }
+            
+            $wpdb->delete($table_name, array('id' => $history_id), array('%d'));
+        }
+    }
+    
+    private function cleanup_old_labels() {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'barcode_label_history';
+        $seven_days_ago = date('Y-m-d H:i:s', strtotime('-7 days'));
+        
+        $old_records = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM $table_name WHERE created_at < %s",
+            $seven_days_ago
+        ));
+        
+        $deleted_count = 0;
+        foreach ($old_records as $record) {
+            $file_path = str_replace(wp_upload_dir()['baseurl'], wp_upload_dir()['basedir'], $record->pdf_url);
+            if (file_exists($file_path)) {
+                unlink($file_path);
+            }
+            $deleted_count++;
+        }
+        
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM $table_name WHERE created_at < %s",
+            $seven_days_ago
+        ));
+        
+        return $deleted_count;
+    }
+    
     public static function activate() {
+        $instance = new self();
+        $instance->create_database_tables();
+        
         if (!wp_next_scheduled('wc_barcode_labels_cleanup')) {
             wp_schedule_event(time(), 'daily', 'wc_barcode_labels_cleanup');
         }
+        
+        add_action('wc_barcode_labels_cleanup', array($instance, 'cleanup_old_labels'));
     }
     
     public static function deactivate() {
