@@ -1,0 +1,24 @@
+# WordPress
+wp-config.php
+wp-content/uploads/
+wp-content/cache/
+
+# Plugin-specific
+lib/
+temp/
+*.log
+
+# Development
+node_modules/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backups
+*.bak
+*~
