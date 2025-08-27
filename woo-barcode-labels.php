@@ -3,7 +3,7 @@
  * Plugin Name: WooCommerce Barcode Labels
  * Plugin URI: https://codewattz.com
  * Description: Print customizable barcode labels for WooCommerce products with bulk printing support
- * Version: 1.0.1
+ * Version: 1.0.2
  * Author: Code Wattz
  * License: GPL v2 or later
  * Requires at least: 5.0
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('WC_BARCODE_LABELS_VERSION', '1.0.1');
+define('WC_BARCODE_LABELS_VERSION', '1.0.2');
 define('WC_BARCODE_LABELS_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('WC_BARCODE_LABELS_PLUGIN_PATH', plugin_dir_path(__FILE__));
 
@@ -191,6 +191,7 @@ class WC_Barcode_Labels {
                                             <label for="show_barcode">Display barcode (using SKU) on label</label>
                                         </td>
                                     </tr>
+                                    <?php if ($this->is_wooconsign_active()): ?>
                                     <tr>
                                         <th scope="row"><label for="show_consignor">Show Consignor Number</label></th>
                                         <td>
@@ -198,6 +199,7 @@ class WC_Barcode_Labels {
                                             <label for="show_consignor">Display consignor number (from WooConsign plugin)</label>
                                         </td>
                                     </tr>
+                                    <?php endif; ?>
                                     <tr>
                                         <th scope="row"><label for="font_size">Font Size</label></th>
                                         <td>
@@ -221,7 +223,7 @@ class WC_Barcode_Labels {
                             <h2>Label Preview</h2>
                             <div id="label-preview">
                                 <div class="label-dimensions">
-                                    <strong>Label Size:</strong> 2.125" × 1.125" (horizontal)
+                                    <strong>Label Size:</strong> 2" × 1" (horizontal)
                                 </div>
                                 <div id="preview-content">
                                     Click "Preview Labels" to see how your labels will look.
@@ -243,10 +245,12 @@ class WC_Barcode_Labels {
                                         <small><?php echo esc_html($product->get_sku() ?: 'N/A'); ?></small><br>
                                         <small>Price: <?php echo wc_price($product->get_price()); ?></small>
                                         <?php 
-                                        $consignor_number = $this->get_consignor_number($product->get_id());
-                                        if ($consignor_number): ?>
-                                        <br><small>Consignor: <?php echo esc_html($consignor_number); ?></small>
-                                        <?php endif; ?>
+                                        if ($this->is_wooconsign_active()):
+                                            $consignor_number = $this->get_consignor_number($product->get_id());
+                                            if ($consignor_number): ?>
+                                            <br><small>Consignor: <?php echo esc_html($consignor_number); ?></small>
+                                            <?php endif; 
+                                        endif; ?>
                                     </div>
                                 </div>
                             <?php endforeach; ?>
@@ -327,9 +331,9 @@ class WC_Barcode_Labels {
             return '<p>Product not found</p>';
         }
         
-        $consignor_number = $this->get_consignor_number($product_id);
+        $consignor_number = $this->is_wooconsign_active() ? $this->get_consignor_number($product_id) : null;
         
-        $html = '<div class="label-preview-sample" style="width: 153px; height: 81px; border: 1px solid #333; padding: 4px; font-size: ' . $settings['font_size'] . 'px; font-family: Arial, sans-serif; position: relative; text-align: center; background: #fff; display: flex; flex-direction: column; justify-content: center;">';
+        $html = '<div class="label-preview-sample" style="width: 144px; height: 72px; border: 1px solid #333; padding: 4px; font-size: ' . $settings['font_size'] . 'px; font-family: Arial, sans-serif; position: relative; text-align: center; background: #fff; display: flex; flex-direction: column; justify-content: center;">';
         
         $content_parts = array();
         
@@ -376,6 +380,10 @@ class WC_Barcode_Labels {
         
         $pdf_generator = new WC_Barcode_Labels_PDF_Generator();
         return $pdf_generator->generate($product_ids, $settings);
+    }
+    
+    private function is_wooconsign_active() {
+        return class_exists('WC_Consignment_Manager');
     }
     
     private function get_consignor_number($product_id) {
@@ -443,9 +451,13 @@ class WC_Barcode_Labels {
             $product = wc_get_product($product_id);
             if ($product) {
                 $product_names[] = $product->get_name();
-                $consignor_number = $this->get_consignor_number($product_id);
-                if ($consignor_number) {
-                    $consignor_numbers[] = $consignor_number;
+                if ($this->is_wooconsign_active()) {
+                    $consignor_number = $this->get_consignor_number($product_id);
+                    if ($consignor_number) {
+                        $consignor_numbers[] = $consignor_number;
+                    } else {
+                        $consignor_numbers[] = 'N/A';
+                    }
                 } else {
                     $consignor_numbers[] = 'N/A';
                 }

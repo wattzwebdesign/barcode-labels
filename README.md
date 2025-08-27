@@ -1,6 +1,6 @@
 # WooCommerce Barcode Labels Plugin
 
-A comprehensive WordPress plugin that allows you to print customizable barcode labels for WooCommerce products. Features bulk printing capability, integration with the WooConsign plugin, and support for 2.125" × 1.125" horizontal labels.
+A comprehensive WordPress plugin that allows you to print customizable barcode labels for WooCommerce products. Features bulk printing capability, integration with the WooConsign plugin, and support for 2" × 1" horizontal labels.
 
 ## Features
 
@@ -11,7 +11,7 @@ A comprehensive WordPress plugin that allows you to print customizable barcode l
   - SKU (both as text and barcode)
   - Consignor number (from WooConsign plugin)
 - **Professional Barcodes**: Generates Code 128 barcodes using product SKU
-- **Perfect Label Size**: Designed for 2.125" × 1.125" labels in horizontal orientation
+- **Perfect Label Size**: Designed for 2" × 1" labels in horizontal orientation
 - **PDF Output**: Generates print-ready PDF files that open in system print dialog
 - **Easy Configuration**: User-friendly interface with live preview
 - **Settings Persistence**: Saves your label configuration preferences
@@ -62,7 +62,7 @@ You can also access the label configurator directly:
 
 ## Label Specifications
 
-- **Dimensions**: 2.125" × 1.125" (54mm × 29mm)
+- **Dimensions**: 2" × 1" (51mm × 25mm)
 - **Orientation**: Horizontal
 - **Format**: PDF
 - **Barcode Type**: Code 128
@@ -162,7 +162,7 @@ For issues, feature requests, or contributions, please contact the development t
 - WooConsign integration
 - Customizable label configuration
 - Code 128 barcode generation
-- PDF output for 2.125" × 1.125" labels
+- PDF output for 2" × 1" labels
 
 ## License
 

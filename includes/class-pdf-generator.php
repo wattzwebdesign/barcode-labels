@@ -4,8 +4,6 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-require_once(WC_BARCODE_LABELS_PLUGIN_PATH . 'includes/class-barcode-generator.php');
-
 class WC_Barcode_Labels_PDF_Generator {
     
     private $tcpdf_path;
@@ -83,7 +81,7 @@ class WC_Barcode_Labels_PDF_Generator {
             return false;
         }
         
-        $pdf = new TCPDF('L', 'in', array(2.125, 1.125), true, 'UTF-8', false);
+        $pdf = new TCPDF('L', 'in', array(2.0, 1.0), true, 'UTF-8', false);
         
         $pdf->SetCreator('WooCommerce Barcode Labels');
         $pdf->SetAuthor('WooCommerce Store');
@@ -130,15 +128,15 @@ class WC_Barcode_Labels_PDF_Generator {
         $font_size = intval($settings['font_size']);
         $line_height = $font_size / 72 * 1.2;
         
-        $y_position = 0.05;
-        $label_width = 2.125;
+        $y_position = 0.02;
+        $label_width = 2.0;
         
         if ($settings['show_title']) {
             $title = $this->truncate_text($product->get_name(), 32);
-            $pdf->SetFont('helvetica', 'B', $font_size + 2);
+            $pdf->SetFont('helvetica', 'B', $font_size);
             $pdf->SetXY(0, $y_position);
             $pdf->Cell($label_width, $line_height, $title, 0, 1, 'C');
-            $y_position += $line_height + 0.02;
+            $y_position += $line_height + 0.01;
         }
         
         if ($settings['show_price']) {
@@ -146,18 +144,25 @@ class WC_Barcode_Labels_PDF_Generator {
             $pdf->SetFont('helvetica', 'B', $font_size + 1);
             $pdf->SetXY(0, $y_position);
             $pdf->Cell($label_width, $line_height, $price, 0, 1, 'C');
-            $y_position += $line_height + 0.02;
+            $y_position += $line_height + 0.01;
         }
         
-        if ($settings['show_consignor']) {
+        $has_consignor = false;
+        if ($settings['show_consignor'] && $this->is_wooconsign_active()) {
             $consignor_number = $this->get_consignor_number($product_id);
             if ($consignor_number) {
+                $has_consignor = true;
                 $consignor_text = 'Consignor: ' . $consignor_number;
-                $pdf->SetFont('helvetica', '', $font_size - 1);
+                $pdf->SetFont('helvetica', '', $font_size - 2);
                 $pdf->SetXY(0, $y_position);
-                $pdf->Cell($label_width, $line_height * 0.9, $consignor_text, 0, 1, 'C');
-                $y_position += $line_height * 0.9 + 0.02;
+                $pdf->Cell($label_width, $line_height * 0.8, $consignor_text, 0, 1, 'C');
+                $y_position += $line_height * 0.8 + 0.01;
             }
+        }
+        
+        // Add minimal spacing above barcode when no consignor is shown
+        if (!$has_consignor && ($settings['show_title'] || $settings['show_price'])) {
+            $y_position += 0.02;
         }
         
         if ($settings['show_barcode'] && $product->get_sku()) {
@@ -174,45 +179,49 @@ class WC_Barcode_Labels_PDF_Generator {
     }
     
     private function add_barcode($pdf, $sku, $y_position, $settings) {
-        $barcode_generator = new WC_Barcode_Labels_Barcode_Generator();
-        $barcode_image = $barcode_generator->generate_code128($sku);
+        // Use TCPDF's built-in barcode generation for better compatibility
+        $available_height = 0.95 - $y_position;
+        $barcode_height = min(0.35, $available_height - 0.1);
+        $barcode_width = 1.5;
         
-        if ($barcode_image) {
-            $temp_dir = wp_upload_dir()['basedir'] . '/barcode-labels/temp/';
-            if (!file_exists($temp_dir)) {
-                wp_mkdir_p($temp_dir);
-            }
-            
-            $barcode_file = $temp_dir . 'barcode_' . time() . '_' . wp_generate_password(8, false) . '.png';
-            imagepng($barcode_image, $barcode_file);
-            
-            $available_height = 1.075 - $y_position;
-            $barcode_height = min(0.25, $available_height - 0.15);
-            $barcode_width = 1.3;
-            
-            $x_center = (2.125 - $barcode_width) / 2;
-            
-            $pdf->Image($barcode_file, $x_center, $y_position, $barcode_width, $barcode_height, 'PNG');
-            
-            $sku_y_position = $y_position + $barcode_height + 0.02;
-            
-            if ($settings['show_sku']) {
-                $pdf->SetFont('helvetica', '', intval($settings['font_size']) - 2);
-                $pdf->SetXY(0, $sku_y_position);
-                $pdf->Cell(2.125, 0.1, $sku, 0, 1, 'C');
-                $sku_y_position += 0.1;
-            }
-            
-            imagedestroy($barcode_image);
-            unlink($barcode_file);
-            
-            return array('sku_y_position' => $sku_y_position);
+        $x_center = (2.0 - $barcode_width) / 2;
+        
+        // TCPDF's write1DBarcode method for Code 128
+        $style = array(
+            'border' => false,
+            'vpadding' => 'auto',
+            'hpadding' => 'auto',
+            'fgcolor' => array(0, 0, 0),
+            'bgcolor' => array(255, 255, 255),
+            'text' => false,
+            'font' => 'helvetica',
+            'fontsize' => 8
+        );
+        
+        // Generate the barcode using TCPDF's method with proper parameters
+        $pdf->write1DBarcode($sku, 'C128', $x_center, $y_position, $barcode_width, $barcode_height, 0.4, $style, 'N');
+        
+        $sku_y_position = $y_position + $barcode_height - 0.01;
+        
+        if ($settings['show_sku']) {
+            $pdf->SetFont('helvetica', '', intval($settings['font_size']) - 2);
+            $pdf->SetXY(0, $sku_y_position);
+            $pdf->Cell(2.0, 0.1, $sku, 0, 1, 'C');
+            $sku_y_position += 0.1;
         }
         
-        return false;
+        return array('sku_y_position' => $sku_y_position);
+    }
+    
+    private function is_wooconsign_active() {
+        return class_exists('WC_Consignment_Manager');
     }
     
     private function get_consignor_number($product_id) {
+        if (!$this->is_wooconsign_active()) {
+            return null;
+        }
+        
         $consignor_id = get_post_meta($product_id, '_consignor_id', true);
         
         if ($consignor_id) {

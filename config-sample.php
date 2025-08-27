@@ -23,8 +23,8 @@ return array(
     
     // Label dimensions in inches
     'label_dimensions' => array(
-        'width' => 2.125,
-        'height' => 1.125,
+        'width' => 2.0,
+        'height' => 1.0,
         'orientation' => 'landscape'
     ),
     
