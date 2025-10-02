@@ -1,5 +1,26 @@
 jQuery(document).ready(function($) {
     
+    // Handle bulk action form submission for print labels
+    $('form#posts-filter').on('submit', function(e) {
+        var action = $('#bulk-action-selector-top').val() || $('#bulk-action-selector-bottom').val();
+        if (action === 'print_barcode_labels') {
+            e.preventDefault();
+            
+            var selectedIds = [];
+            $('input[name="post[]"]:checked').each(function() {
+                selectedIds.push($(this).val());
+            });
+            
+            if (selectedIds.length === 0) {
+                alert('Please select at least one product to print labels.');
+                return;
+            }
+            
+            var url = wcBarcodeLabels.admin_url + '&product_ids=' + selectedIds.join(',');
+            window.open(url, '_blank');
+        }
+    });
+    
     $('#preview-labels').on('click', function() {
         var button = $(this);
         var originalText = button.text();
@@ -157,4 +178,136 @@ jQuery(document).ready(function($) {
     if ($('#product-ids').val()) {
         $('#preview-labels').trigger('click');
     }
+    
+    $('.add-to-queue-btn').on('click', function() {
+        var $btn = $(this);
+        var productId = $btn.data('product-id');
+        var $icon = $btn.find('.dashicons');
+        var isInQueue = $icon.hasClass('dashicons-yes');
+        
+        var action = isInQueue ? 'remove_from_label_queue' : 'add_to_label_queue';
+        
+        $.ajax({
+            url: wcBarcodeLabels.ajax_url,
+            type: 'POST',
+            data: {
+                action: action,
+                nonce: wcBarcodeLabels.nonce,
+                product_id: productId
+            },
+            success: function(response) {
+                if (response.success) {
+                    if (isInQueue) {
+                        $icon.removeClass('dashicons-yes').addClass('dashicons-tag').css('color', '#666');
+                    } else {
+                        $icon.removeClass('dashicons-tag').addClass('dashicons-yes').css('color', '#46b450');
+                        $btn.css('animation', 'checkmark-pulse 0.5s');
+                        setTimeout(function() {
+                            $btn.css('animation', '');
+                        }, 500);
+                    }
+                    
+                    if ($('#queue-count').length) {
+                        $('#queue-count').text(response.data.queue_count);
+                    }
+                }
+            },
+            error: function() {
+                alert('Error updating queue. Please try again.');
+            }
+        });
+    });
+    
+    $('.add-to-queue-product-btn').on('click', function(e) {
+        e.preventDefault();
+        var $btn = $(this);
+        var productId = $btn.data('product-id');
+        var isInQueue = $btn.text().trim().indexOf('Remove') === 0;
+        
+        var action = isInQueue ? 'remove_from_label_queue' : 'add_to_label_queue';
+        
+        $.ajax({
+            url: wcBarcodeLabels.ajax_url,
+            type: 'POST',
+            data: {
+                action: action,
+                nonce: wcBarcodeLabels.nonce,
+                product_id: productId
+            },
+            success: function(response) {
+                if (response.success) {
+                    var $message = $('.queue-status-message');
+                    
+                    if (isInQueue) {
+                        $btn.html('<span class="dashicons dashicons-tag" style="margin-top: 3px;"></span> Add to Queue');
+                        $message.text('Removed from queue').css('color', '#dc3232').fadeIn();
+                    } else {
+                        $btn.html('<span class="dashicons dashicons-tag" style="margin-top: 3px;"></span> Remove from Queue');
+                        $message.html('<span class="dashicons dashicons-yes" style="color: #46b450; margin-top: 3px;"></span> Added to queue!').css('color', '#46b450').fadeIn();
+                    }
+                    
+                    setTimeout(function() {
+                        $message.fadeOut();
+                    }, 3000);
+                }
+            },
+            error: function() {
+                alert('Error updating queue. Please try again.');
+            }
+        });
+    });
+    
+    function loadLabelQueue() {
+        $.ajax({
+            url: wcBarcodeLabels.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'get_label_queue',
+                nonce: wcBarcodeLabels.nonce
+            },
+            success: function(response) {
+                if (response.success) {
+                    if (response.data.product_ids.length > 0) {
+                        window.location.href = wcBarcodeLabels.admin_url + '&use_queue=1';
+                    } else {
+                        alert('Queue is empty. Add products to queue first.');
+                    }
+                }
+            },
+            error: function() {
+                alert('Error loading queue. Please try again.');
+            }
+        });
+    }
+    
+    $('#load-from-queue').on('click', loadLabelQueue);
+    $('#load-queue-from-products').on('click', loadLabelQueue);
+    
+    $('#clear-queue').on('click', function() {
+        if (!confirm('Are you sure you want to clear the entire queue? This cannot be undone.')) {
+            return;
+        }
+        
+        $.ajax({
+            url: wcBarcodeLabels.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'clear_label_queue',
+                nonce: wcBarcodeLabels.nonce
+            },
+            success: function(response) {
+                if (response.success) {
+                    $('#queue-count').text('0');
+                    showNotice('Queue cleared successfully!', 'success');
+                    
+                    if (window.location.href.indexOf('use_queue=1') > -1) {
+                        window.location.href = wcBarcodeLabels.admin_url;
+                    }
+                }
+            },
+            error: function() {
+                alert('Error clearing queue. Please try again.');
+            }
+        });
+    });
 });

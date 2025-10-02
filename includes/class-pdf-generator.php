@@ -247,4 +247,81 @@ class WC_Barcode_Labels_PDF_Generator {
         }
         return $text;
     }
+
+    public function generate_consignor_labels($consignor, $quantity, $settings) {
+        if (!$this->ensure_tcpdf()) {
+            return false;
+        }
+
+        $pdf = new TCPDF('L', 'in', array(2.0, 1.0), true, 'UTF-8', false);
+
+        $pdf->SetCreator('WooCommerce Barcode Labels');
+        $pdf->SetAuthor('WooCommerce Store');
+        $pdf->SetTitle('Consignor Labels');
+        $pdf->SetSubject('Consignor Labels');
+
+        $pdf->setPrintHeader(false);
+        $pdf->setPrintFooter(false);
+
+        $pdf->SetMargins(0, 0, 0, true);
+        $pdf->SetAutoPageBreak(false, 0);
+
+        for ($i = 0; $i < $quantity; $i++) {
+            $this->add_consignor_label_page($pdf, $consignor, $settings);
+        }
+
+        $uploads = wp_upload_dir();
+        $pdf_dir = $uploads['basedir'] . '/barcode-labels/';
+
+        if (!file_exists($pdf_dir)) {
+            wp_mkdir_p($pdf_dir);
+        }
+
+        $filename = 'consignor_labels_' . time() . '_' . wp_generate_password(8, false) . '.pdf';
+        $file_path = $pdf_dir . $filename;
+
+        $pdf->Output($file_path, 'F');
+
+        if (file_exists($file_path)) {
+            return $uploads['baseurl'] . '/barcode-labels/' . $filename;
+        }
+
+        return false;
+    }
+
+    private function add_consignor_label_page($pdf, $consignor, $settings) {
+        $pdf->AddPage();
+
+        $font_size = intval($settings['font_size']);
+        $line_height = $font_size / 72 * 1.2;
+
+        $y_position = 0.15;
+        $label_width = 2.0;
+
+        if ($settings['show_consignor_number']) {
+            $consignor_text = 'Consignor: #' . $consignor->consignor_number;
+            $pdf->SetFont('helvetica', '', $font_size);
+            $pdf->SetXY(0, $y_position);
+            $pdf->Cell($label_width, $line_height, $consignor_text, 0, 1, 'C');
+            $y_position += $line_height + 0.05;
+        }
+
+        if ($settings['show_backlog_item']) {
+            $pdf->SetFont('helvetica', 'B', 9);
+            $pdf->SetXY(0, $y_position);
+            $pdf->Cell($label_width, 0.15, 'BACKLOG ITEM', 0, 1, 'C');
+            $y_position += 0.15;
+        }
+
+        if ($settings['show_price_line']) {
+            // Add price line at the bottom (where the divider line was)
+            $price_y_position = 0.83; // Near the bottom of the 1" label
+            $pdf->SetFont('helvetica', '', 8);
+            $pdf->SetXY(0.05, $price_y_position);
+            $pdf->Cell(0.3, 0.1, 'Price:', 0, 0, 'L');
+            // Double the length of the underline
+            $pdf->SetXY(0.35, $price_y_position);
+            $pdf->Cell(1.6, 0.1, '____________________________________', 0, 0, 'L');
+        }
+    }
 }
