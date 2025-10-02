@@ -313,14 +313,32 @@ class WC_Barcode_Labels_PDF_Generator {
             $y_position += 0.15;
         }
 
-        if ($settings['show_price_line']) {
-            // Add price line at the bottom (where the divider line was)
-            $price_y_position = 0.83; // Near the bottom of the 1" label
-            $pdf->SetFont('helvetica', '', 8);
-            $pdf->SetXY(0.05, $price_y_position);
+        // Add size and price lines side by side at the bottom
+        $bottom_y_position = 0.83; // Near the bottom of the 1" label
+        $pdf->SetFont('helvetica', '', 8);
+
+        if ($settings['show_size_line'] && $settings['show_price_line']) {
+            // Both lines - side by side
+            $pdf->SetXY(0.05, $bottom_y_position);
+            $pdf->Cell(0.25, 0.1, 'Size:', 0, 0, 'L');
+            $pdf->SetXY(0.30, $bottom_y_position);
+            $pdf->Cell(0.55, 0.1, '___________', 0, 0, 'L');
+
+            $pdf->SetXY(0.85, $bottom_y_position);
             $pdf->Cell(0.3, 0.1, 'Price:', 0, 0, 'L');
-            // Double the length of the underline
-            $pdf->SetXY(0.35, $price_y_position);
+            $pdf->SetXY(1.15, $bottom_y_position);
+            $pdf->Cell(0.8, 0.1, '______________', 0, 0, 'L');
+        } elseif ($settings['show_size_line']) {
+            // Only size line - full width
+            $pdf->SetXY(0.05, $bottom_y_position);
+            $pdf->Cell(0.3, 0.1, 'Size:', 0, 0, 'L');
+            $pdf->SetXY(0.35, $bottom_y_position);
+            $pdf->Cell(1.6, 0.1, '____________________________________', 0, 0, 'L');
+        } elseif ($settings['show_price_line']) {
+            // Only price line - full width
+            $pdf->SetXY(0.05, $bottom_y_position);
+            $pdf->Cell(0.3, 0.1, 'Price:', 0, 0, 'L');
+            $pdf->SetXY(0.35, $bottom_y_position);
             $pdf->Cell(1.6, 0.1, '____________________________________', 0, 0, 'L');
         }
     }

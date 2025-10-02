@@ -816,6 +816,13 @@ class WC_Barcode_Labels {
                                     </td>
                                 </tr>
                                 <tr>
+                                    <th scope="row"><label for="show_size_line">Show Size Line</label></th>
+                                    <td>
+                                        <input type="checkbox" id="show_size_line" name="show_size_line" value="1" checked>
+                                        <label for="show_size_line">Display size line</label>
+                                    </td>
+                                </tr>
+                                <tr>
                                     <th scope="row"><label for="show_price_line">Show Price Line</label></th>
                                     <td>
                                         <input type="checkbox" id="show_price_line" name="show_price_line" value="1" checked>
@@ -872,6 +879,7 @@ class WC_Barcode_Labels {
                 var selectedText = consignorSelect.find('option:selected').text();
                 var showNumber = $('#show_consignor_number').is(':checked');
                 var showBacklogItem = $('#show_backlog_item').is(':checked');
+                var showSizeLine = $('#show_size_line').is(':checked');
                 var showPriceLine = $('#show_price_line').is(':checked');
                 var fontSize = parseInt($('#consignor_font_size').val());
 
@@ -901,16 +909,22 @@ class WC_Barcode_Labels {
                 }
                 html += '</div>';
 
-                if (showPriceLine) {
-                    html += '<div style="font-size: 8px; text-align: left;">Price:____________________</div>';
+                html += '<div style="font-size: 8px; text-align: left;">';
+                if (showSizeLine && showPriceLine) {
+                    html += 'Size:___________Price:______________';
+                } else if (showSizeLine) {
+                    html += 'Size:____________________';
+                } else if (showPriceLine) {
+                    html += 'Price:____________________';
                 }
+                html += '</div>';
 
                 html += '</div>';
 
                 $('#consignor-preview-content').html(html);
             }
 
-            $('#consignor_id, #show_consignor_number, #show_backlog_item, #show_price_line, #consignor_font_size').on('change', updateConsignorPreview);
+            $('#consignor_id, #show_consignor_number, #show_backlog_item, #show_size_line, #show_price_line, #consignor_font_size').on('change', updateConsignorPreview);
 
             $('#generate-consignor-pdf').on('click', function() {
                 var consignorId = $('#consignor_id').val();
@@ -939,6 +953,7 @@ class WC_Barcode_Labels {
                         quantity: quantity,
                         show_consignor_number: $('#show_consignor_number').is(':checked') ? 1 : 0,
                         show_backlog_item: $('#show_backlog_item').is(':checked') ? 1 : 0,
+                        show_size_line: $('#show_size_line').is(':checked') ? 1 : 0,
                         show_price_line: $('#show_price_line').is(':checked') ? 1 : 0,
                         font_size: $('#consignor_font_size').val()
                     },
@@ -1345,6 +1360,7 @@ class WC_Barcode_Labels {
         $settings = array(
             'show_consignor_number' => isset($_POST['show_consignor_number']) ? 1 : 0,
             'show_backlog_item' => isset($_POST['show_backlog_item']) ? 1 : 0,
+            'show_size_line' => isset($_POST['show_size_line']) ? 1 : 0,
             'show_price_line' => isset($_POST['show_price_line']) ? 1 : 0,
             'font_size' => intval($_POST['font_size'])
         );
