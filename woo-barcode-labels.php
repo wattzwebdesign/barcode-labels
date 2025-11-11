@@ -3,7 +3,7 @@
  * Plugin Name: WooCommerce Barcode Labels
  * Plugin URI: https://codewattz.com
  * Description: Print customizable barcode labels for WooCommerce products with bulk printing support
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: Code Wattz
  * License: GPL v2 or later
  * Requires at least: 5.0
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('WC_BARCODE_LABELS_VERSION', '1.1.0');
+define('WC_BARCODE_LABELS_VERSION', '1.2.0');
 define('WC_BARCODE_LABELS_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('WC_BARCODE_LABELS_PLUGIN_PATH', plugin_dir_path(__FILE__));
 
@@ -830,6 +830,13 @@ class WC_Barcode_Labels {
                                     </td>
                                 </tr>
                                 <tr>
+                                    <th scope="row"><label for="show_qr_code">Show QR Code</label></th>
+                                    <td>
+                                        <input type="checkbox" id="show_qr_code" name="show_qr_code" value="1" checked>
+                                        <label for="show_qr_code">Display QR code for POS scanning</label>
+                                    </td>
+                                </tr>
+                                <tr>
                                     <th scope="row"><label for="consignor_font_size">Font Size</label></th>
                                     <td>
                                         <select id="consignor_font_size" name="consignor_font_size">
@@ -924,7 +931,7 @@ class WC_Barcode_Labels {
                 $('#consignor-preview-content').html(html);
             }
 
-            $('#consignor_id, #show_consignor_number, #show_backlog_item, #show_size_line, #show_price_line, #consignor_font_size').on('change', updateConsignorPreview);
+            $('#consignor_id, #show_consignor_number, #show_backlog_item, #show_size_line, #show_price_line, #show_qr_code, #consignor_font_size').on('change', updateConsignorPreview);
 
             $('#generate-consignor-pdf').on('click', function() {
                 var consignorId = $('#consignor_id').val();
@@ -955,6 +962,7 @@ class WC_Barcode_Labels {
                         show_backlog_item: $('#show_backlog_item').is(':checked') ? 1 : 0,
                         show_size_line: $('#show_size_line').is(':checked') ? 1 : 0,
                         show_price_line: $('#show_price_line').is(':checked') ? 1 : 0,
+                        show_qr_code: $('#show_qr_code').is(':checked') ? 1 : 0,
                         font_size: $('#consignor_font_size').val()
                     },
                     success: function(response) {
@@ -1362,6 +1370,7 @@ class WC_Barcode_Labels {
             'show_backlog_item' => isset($_POST['show_backlog_item']) ? 1 : 0,
             'show_size_line' => isset($_POST['show_size_line']) ? 1 : 0,
             'show_price_line' => isset($_POST['show_price_line']) ? 1 : 0,
+            'show_qr_code' => isset($_POST['show_qr_code']) ? 1 : 0,
             'font_size' => intval($_POST['font_size'])
         );
 

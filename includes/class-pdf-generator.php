@@ -298,19 +298,57 @@ class WC_Barcode_Labels_PDF_Generator {
         $y_position = 0.15;
         $label_width = 2.0;
 
-        if ($settings['show_consignor_number']) {
-            $consignor_text = 'Consignor: #' . $consignor->consignor_number;
-            $pdf->SetFont('helvetica', '', $font_size);
-            $pdf->SetXY(0, $y_position);
-            $pdf->Cell($label_width, $line_height, $consignor_text, 0, 1, 'C');
-            $y_position += $line_height + 0.05;
-        }
+        // Two-column layout: QR code on left, text on right
+        if (!empty($settings['show_qr_code']) && $settings['show_qr_code']) {
+            $qr_data = 'BACKLOG:' . $consignor->id;
+            $qr_size = 0.55; // 0.55 inches
+            $qr_x = 0.1; // Left margin
+            $qr_y = $y_position;
 
-        if ($settings['show_backlog_item']) {
-            $pdf->SetFont('helvetica', 'B', 9);
-            $pdf->SetXY(0, $y_position);
-            $pdf->Cell($label_width, 0.15, 'BACKLOG ITEM', 0, 1, 'C');
-            $y_position += 0.15;
+            // Generate QR code on the left
+            $pdf->write2DBarcode($qr_data, 'QRCODE,H', $qr_x, $qr_y, $qr_size, $qr_size, array('border' => false), 'N');
+
+            // Text column starts after QR code
+            $text_x = $qr_x + $qr_size + 0.1; // QR code + spacing
+            $text_width = $label_width - $text_x - 0.1; // Remaining width minus right margin
+            $text_y = $y_position;
+
+            // Add consignor number in right column
+            if ($settings['show_consignor_number']) {
+                $consignor_text = 'Consignor: #' . $consignor->consignor_number;
+                $pdf->SetFont('helvetica', '', $font_size);
+                $pdf->SetXY($text_x, $text_y);
+                $pdf->Cell($text_width, $line_height, $consignor_text, 0, 1, 'C');
+                $text_y += $line_height + 0.05;
+            }
+
+            // Add BACKLOG ITEM text in right column
+            if ($settings['show_backlog_item']) {
+                $pdf->SetFont('helvetica', 'B', 9);
+                $pdf->SetXY($text_x, $text_y);
+                $pdf->Cell($text_width, 0.15, 'BACKLOG ITEM', 0, 1, 'C');
+                $text_y += 0.15;
+            }
+
+            // Update y_position to bottom of QR code or text, whichever is lower
+            $qr_bottom = $qr_y + $qr_size;
+            $y_position = max($qr_bottom, $text_y) + 0.05;
+        } else {
+            // No QR code - use original centered layout
+            if ($settings['show_consignor_number']) {
+                $consignor_text = 'Consignor: #' . $consignor->consignor_number;
+                $pdf->SetFont('helvetica', '', $font_size);
+                $pdf->SetXY(0, $y_position);
+                $pdf->Cell($label_width, $line_height, $consignor_text, 0, 1, 'C');
+                $y_position += $line_height + 0.05;
+            }
+
+            if ($settings['show_backlog_item']) {
+                $pdf->SetFont('helvetica', 'B', 9);
+                $pdf->SetXY(0, $y_position);
+                $pdf->Cell($label_width, 0.15, 'BACKLOG ITEM', 0, 1, 'C');
+                $y_position += 0.15;
+            }
         }
 
         // Add size and price lines side by side at the bottom
